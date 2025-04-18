@@ -1,0 +1,19 @@
+{
+  "players": [
+    {
+      "name": "Alice",
+      "clue": "Row is 5",
+      "weight": 1
+    },
+    {
+      "name": "Bob",
+      "clue": "Column is G",
+      "weight": 2
+    },
+    {
+      "name": "Cara",
+      "clue": "Adj to water",
+      "weight": 1
+    }
+  ]
+}
