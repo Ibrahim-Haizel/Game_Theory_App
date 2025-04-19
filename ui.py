@@ -134,10 +134,53 @@ class GridView:  # noqa: D101
                 if 0 <= r < self.n and 0 <= c < self.n:
                     self.onclick(r, c)
 
-    def draw(self, surf: pg.Surface, revealed: List[Tuple[int, int, bool]], grid: List[List[Optional['Treasure']]]) -> None:
+    def draw(
+        self,
+        surf: pg.Surface,
+        revealed: List[Tuple[int, int, bool]],
+        grid: List[List[Optional['Treasure']]],
+        allowed: Optional[Set[Tuple[int, int]]] = None,
+        clue_positions: List[Tuple[int, Set[Tuple[int, int]], bool]] = None,
+        players: Optional[List['Player']] = None,
+    ) -> None:
         # Board background
         bg_rect = pg.Rect(self.x0, self.y0, self.size_px, self.size_px)
         pg.draw.rect(surf, (20, 20, 20), bg_rect)  # Dark background for the grid
+
+        # Player-specific clue outlines (each player gets a different color)
+        if clue_positions:
+            # Draw each player's clue area with their assigned color
+            for (player_idx, positions, is_restrictive) in clue_positions:
+                if not is_restrictive:
+                    continue  # Skip non-restrictive clues
+                # Determine player color with semi-transparency
+                if players and 0 <= player_idx < len(players):
+                    r, g, b = players[player_idx].color
+                else:
+                    r, g, b = (255, 0, 0)
+                outline_color = (r, g, b, 120)
+                # Create a surface to draw borders
+                outline_surface = pg.Surface((self.cell_size, self.cell_size), pg.SRCALPHA)
+                pg.draw.rect(outline_surface, outline_color, (0, 0, self.cell_size, self.cell_size), 3)
+                # Draw outlines for all cells in this player's position set
+                for (r_idx, c_idx) in positions:
+                    cell_x = self.x0 + c_idx * self.cell_size
+                    cell_y = self.y0 + r_idx * self.cell_size
+                    surf.blit(outline_surface, (cell_x, cell_y))
+
+        # Highlight allowed guess cells
+        if allowed is not None:
+            # translucent highlight surface
+            hl = pg.Surface((self.cell_size, self.cell_size), pg.SRCALPHA)
+            hl.fill((0, 255, 0, 50))  # semi-transparent green
+            for (r, c) in allowed:
+                rect = pg.Rect(
+                    self.x0 + c * self.cell_size,
+                    self.y0 + r * self.cell_size,
+                    self.cell_size,
+                    self.cell_size,
+                )
+                surf.blit(hl, rect.topleft)
 
         # Draw revealed treasures first (optional)
         for r in range(self.n):
@@ -209,7 +252,7 @@ class PlayerPanel:
             toggle_rect = pg.Rect(self.rect.x + 5, y_offset + 5, toggle_w, toggle_w)
             # Use a lambda that captures the current player index 'i'
             callback = (lambda idx=i: self.commit_callback(idx))
-            commit_button = Button(toggle_rect, "", callback, toggle=True, color=(200, 200, 200), active_color=(0, 200, 0))
+            commit_button = Button(toggle_rect, "", callback, toggle=True, color=(200, 200, 200), active_color=player.color)
             self.buttons.append(commit_button)
 
             # Player Name/Initial Label (drawn directly)
@@ -243,6 +286,20 @@ class PlayerPanel:
         y_offset = self.rect.y + 5
         widget_h = 35
 
+        # --- Determine which clues are restrictive (useful) ---
+        all_committed = len(self.reveal_coalition) == len(self.players) and len(self.players) > 0
+        grid_size = 10  # Default, or could be passed in
+        clue_types = []
+        if all_committed:
+            for player in self.players:
+                pos = player.allowed_positions(grid_size)
+                if len(pos) == grid_size * grid_size:
+                    clue_types.append('nonrestrictive')
+                else:
+                    clue_types.append('restrictive')
+        else:
+            clue_types = [None] * len(self.players)
+
         for i, player in enumerate(self.players):
             # Draw Commit Toggle
             self.buttons[i].draw(screen)
@@ -250,12 +307,21 @@ class PlayerPanel:
             # Draw Player Name
             name_color = player.color if hasattr(player, 'color') else (0, 0, 0)
             name_txt = Font.render(f"{player.get_short_name()}: {player.name}", True, name_color)
-            screen.blit(name_txt, (self.rect.x + 30, y_offset + 8))
+            name_pos = (self.rect.x + 30, y_offset + 8)
+            screen.blit(name_txt, name_pos)
 
             # Draw Clue if revealed for this player
             if i in self.reveal_coalition:
                 clue_txt = FontSmall.render(f"   Clue: {player.clue}", True, (50, 50, 50))
-                screen.blit(clue_txt, (self.rect.x + 30, y_offset + 22))
+                clue_pos = (self.rect.x + 30, y_offset + 22)
+                screen.blit(clue_txt, clue_pos)
+                # --- Draw thick outline if all clues committed ---
+                if all_committed:
+                    outline_rect = pg.Rect(self.rect.x + 28, y_offset + 20, 220, 20)
+                    if clue_types[i] == 'restrictive':
+                        pg.draw.rect(screen, name_color, outline_rect, 4)  # Use player color for restrictive outline
+                    elif clue_types[i] == 'nonrestrictive':
+                        pg.draw.rect(screen, (100, 100, 100), outline_rect, 4)  # Grey thick
             else:
                 clue_txt = FontSmall.render("   Clue: [Hidden]", True, (150, 150, 150))
                 screen.blit(clue_txt, (self.rect.x + 30, y_offset + 22))

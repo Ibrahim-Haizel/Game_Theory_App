@@ -10,7 +10,7 @@ import csv # For CSV export
 
 from models import Player, Treasure, Grid, Coalition, load_clues, load_board
 from shapley import shapley_sample
-from ui import Button, GridView, LedgerPanel, Font, PlayerPanel, TextInput # Added PlayerPanel, TextInput
+from ui import Button, GridView, LedgerPanel, Font, PlayerPanel, TextInput, COLOR_INACTIVE # Added COLOR_INACTIVE
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -62,6 +62,8 @@ class Game:
         self.round = 0
         self.payouts: Optional[List[float]] = None
         self.last_guess_result: Optional[Tuple[int, int, bool, int]] = None # (r, c, hit, coins)
+        self.allowed_guesses: set[tuple[int,int]] | None = None  # Allowed cells after lock
+        self.clue_positions = []  # List of (player_idx, positions, is_restrictive) for grid highlighting
 
         # --- UI Widgets ---
         # Setup Screen UI (Example - needs proper implementation)
@@ -229,6 +231,16 @@ class Game:
         self.coalition_locked = True
         if self.player_panel:
              self.player_panel.reveal_clues(self.current_coalition) # Show clues for committed players
+
+        # Build allowed_guesses from committed players' clues
+        allowed = set()
+        # Store clue-specific positions for grid highlighting
+        self.clue_positions = []
+        for idx in self.current_coalition:
+            player_positions = self.players[idx].allowed_positions(self.grid_size)
+            self.clue_positions.append((idx, player_positions, len(player_positions) < self.grid_size * self.grid_size))
+            allowed |= player_positions
+        self.allowed_guesses = allowed or None
         self.state = AWAIT_GUESS
         print(f"Coalition locked: {self.current_coalition}. Waiting for guess.")
 
@@ -239,6 +251,11 @@ class Game:
         if not self.coalition_locked:
              print("Coalition not locked yet!")
              return
+
+        # Restrict guesses to allowed positions
+        if self.allowed_guesses is not None and (r, c) not in self.allowed_guesses:
+            print(f"({r},{c}) not permitted by your committed clues.")
+            return
 
         print(f"Grid clicked at ({r}, {c}) by coalition {self.current_coalition}")
         cell = self.grid[r][c]
@@ -276,6 +293,9 @@ class Game:
         if self.player_panel:
              self.player_panel.reset_view() # Hide clues, reset toggles visually
         self.state = AWAIT_COMMIT
+        self.allowed_guesses = None
+        # Clear clue positions
+        self.clue_positions = []
         print(f"--- Starting Round {self.round} ---")
 
     def _confirm_end_game(self):
@@ -477,7 +497,14 @@ class Game:
     def _draw_play(self):
         # Draw Grid
         if self.grid_view:
-            self.grid_view.draw(self.screen, self.revealed, self.grid) # Pass grid for potential treasure display
+            self.grid_view.draw(
+                self.screen,
+                self.revealed,
+                self.grid,
+                self.allowed_guesses,
+                self.clue_positions if self.state == AWAIT_GUESS else [],
+                players=self.players
+            )
 
         # Draw Right Panel Elements
         if self.player_panel:
