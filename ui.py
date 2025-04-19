@@ -263,23 +263,27 @@ class GridView:  # noqa: D101
 
         # Grid lines (draw last, on top)
         line_color = (100, 100, 100)  # Grey grid lines
+        line_thickness = 1 # Reverted thickness
+        label_margin = 8 # Increased margin for labels
         for i in range(self.n + 1):
             # verticals
-            pg.draw.line(surf, line_color, (self.x0 + i * self.cell_size, self.y0), (self.x0 + i * self.cell_size, self.y0 + self.size_px))
+            pg.draw.line(surf, line_color, (self.x0 + i * self.cell_size, self.y0), (self.x0 + i * self.cell_size, self.y0 + self.size_px), line_thickness)
             # horizontals
-            pg.draw.line(surf, line_color, (self.x0, self.y0 + i * self.cell_size), (self.x0 + self.size_px, self.y0 + i * self.cell_size))
+            pg.draw.line(surf, line_color, (self.x0, self.y0 + i * self.cell_size), (self.x0 + self.size_px, self.y0 + i * self.cell_size), line_thickness)
         # Draw column labels (A, B, C, ...)
         for c in range(self.n):
             letter = chr(ord('A') + c)
             label_surf = FontSmall.render(letter, True, TEXT_COLOR)
             x = self.x0 + c * self.cell_size + self.cell_size // 2
-            y = self.y0 - label_surf.get_height() // 2 - 2
+            # Adjusted y for increased margin
+            y = self.y0 - label_surf.get_height() // 2 - label_margin 
             surf.blit(label_surf, (x - label_surf.get_width() // 2, y))
         # Draw row labels (1, 2, 3, ...)
         for r in range(self.n):
             number = str(r + 1)
             label_surf = FontSmall.render(number, True, TEXT_COLOR)
-            x = self.x0 - label_surf.get_width() // 2 - 2
+            # Adjusted x for increased margin
+            x = self.x0 - label_surf.get_width() // 2 - label_margin
             y = self.y0 + r * self.cell_size + self.cell_size // 2 - label_surf.get_height() // 2
             surf.blit(label_surf, (x, y))
 
