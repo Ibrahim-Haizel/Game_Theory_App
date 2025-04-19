@@ -2,17 +2,32 @@
   "players": [
     {
       "name": "Alice",
-      "clue": "Row is 5",
+      "clue": "Row is 3",
       "weight": 1
     },
     {
       "name": "Bob",
-      "clue": "Column is G",
-      "weight": 2
+      "clue": "Column is F",
+      "weight": 1
     },
     {
       "name": "Cara",
-      "clue": "Adj to water",
+      "clue": "Row is 9",
+      "weight": 1
+    },
+    {
+      "name": "Dan",
+      "clue": "Column is B",
+      "weight": 1
+    },
+    {
+      "name": "Eve",
+      "clue": "Row is 6",
+      "weight": 1
+    },
+    {
+      "name": "Frank",
+      "clue": "Column is H",
       "weight": 1
     }
   ]
