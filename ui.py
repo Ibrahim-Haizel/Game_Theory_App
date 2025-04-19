@@ -74,9 +74,18 @@ class Button:  # noqa: D101
         color: Tuple[int, int, int] = (30, 144, 255),  # Dodger Blue
         active_color: Tuple[int, int, int] = (34, 139, 34),  # Forest Green (for toggle)
         text_color: Tuple[int, int, int] = (255, 255, 255),  # White
+        text_hover_color: Optional[Tuple[int, int, int]] = None, # Optional hover text color
     ) -> None:
         self.rect, self.text, self.onclick, self.toggle = rect, text, onclick, toggle
         self.font, self.color, self.active_color, self.text_color = font, color, active_color, text_color
+        
+        # Ensure text_hover_color is always initialized
+        if text_hover_color is None:
+            tr, tg, tb = self.text_color # Use self.text_color which is guaranteed to exist
+            self.text_hover_color = (min(tr + 50, 255), min(tg + 50, 255), min(tb + 50, 255))
+        else:
+            self.text_hover_color = text_hover_color
+            
         self.active = False  # Tracks toggle state
         self._is_hovered = False  # For visual feedback
 
@@ -93,23 +102,66 @@ class Button:  # noqa: D101
 
     def draw(self, surf: pg.Surface) -> None:
         border_color = (0, 0, 0)
-        current_color = self.color
+        current_bg_color = self.color
+        current_text_color = self.text_color # Default text color
 
         if self.toggle and self.active:
-            current_color = self.active_color
+            current_bg_color = self.active_color
 
         if self._is_hovered:
-            # Slightly lighten the color on hover
-            r, g, b = current_color
-            hover_color = (min(r + 30, 255), min(g + 30, 255), min(b + 30, 255))
-            pg.draw.rect(surf, hover_color, self.rect)
+            r, g, b = current_bg_color
+            hover_bg_color = (min(r + 30, 255), min(g + 30, 255), min(b + 30, 255))
+            pg.draw.rect(surf, hover_bg_color, self.rect)
+            current_text_color = self.text_hover_color # Use hover text color
         else:
-            pg.draw.rect(surf, current_color, self.rect)
+            pg.draw.rect(surf, current_bg_color, self.rect)
 
         pg.draw.rect(surf, border_color, self.rect, 2)  # Draw border
-        txt = self.font.render(self.text, True, self.text_color)
-        txt_rect = txt.get_rect(center=self.rect.center)
-        surf.blit(txt, txt_rect)
+
+        # --- Text Wrapping ---
+        padding = 5
+        max_width = self.rect.width - 2 * padding
+        words = self.text.split(' ')
+        lines = []
+        current_line = ""
+        
+        if not self.text.strip():
+            return # Nothing to draw if text is empty
+
+        for word in words:
+            test_line = current_line + (" " if current_line else "") + word
+            test_size = self.font.size(test_line)
+            
+            if test_size[0] <= max_width:
+                current_line = test_line
+            else:
+                if current_line: # Add the completed line
+                    lines.append(current_line)
+                # Handle word longer than max_width - just add it, will be clipped
+                if self.font.size(word)[0] > max_width:
+                     lines.append(word)
+                     current_line = ""
+                else: # Start new line with current word
+                     current_line = word
+        
+        if current_line: # Add the last line
+            lines.append(current_line)
+
+        # --- Render and Blit Lines ---
+        line_height = self.font.get_linesize()
+        total_height = len(lines) * line_height
+        start_y = self.rect.centery - total_height // 2
+
+        for i, line in enumerate(lines):
+            line_surf = self.font.render(line, True, current_text_color)
+            line_rect = line_surf.get_rect(centerx=self.rect.centerx, top=start_y + i * line_height)
+
+            # Clip and draw
+            clip_rect = line_rect.clip(self.rect)
+            source_area = clip_rect.move(-line_rect.left, -line_rect.top)
+            
+            if clip_rect.width > 0 and clip_rect.height > 0:
+                surf.blit(line_surf, clip_rect.topleft, area=source_area)
 
 
 class GridView:  # noqa: D101

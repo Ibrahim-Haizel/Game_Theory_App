@@ -16,20 +16,20 @@ from ui import Button, GridView, LedgerPanel, Font, PlayerPanel, TextInput, COLO
 # Constants
 TopBarH = 40 # Increased height for more info
 WINDOW_W, WINDOW_H = 900, 700
-GRID_PX = 650
+GRID_PX = 600 # Decreased grid size
 RIGHT_W = WINDOW_W - GRID_PX
-GRID_TOP_MARGIN = 20
-GRID_LEFT_MARGIN = 20
-PANEL_MARGIN = 10
-BUTTON_H = 30
+GRID_TOP_MARGIN = 30 # Increased
+GRID_LEFT_MARGIN = 30 # Increased
+PANEL_MARGIN = 20 # Increased margin
+BUTTON_H = 50 # Increased height for wrapped text
 BG_COLOR = (240, 248, 255) # Alice Blue
 GRID_BG_COLOR = (20, 20, 20) # Darker Grid BG
-PLAYER_PANEL_Y = TopBarH + PANEL_MARGIN
+PLAYER_PANEL_Y = TopBarH + PANEL_MARGIN # Correctly uses PANEL_MARGIN
 PLAYER_PANEL_H = 300 # Allocate space for player panel
-LEDGER_Y = PLAYER_PANEL_Y + PLAYER_PANEL_H + PANEL_MARGIN
-LEDGER_H = WINDOW_H - LEDGER_Y - BUTTON_H - PANEL_MARGIN * 2 # Adjust height
-RIGHT_PANEL_X = GRID_PX + PANEL_MARGIN
-RIGHT_PANEL_W = RIGHT_W - PANEL_MARGIN * 2
+LEDGER_Y = PLAYER_PANEL_Y + PLAYER_PANEL_H + PANEL_MARGIN # Correctly uses PANEL_MARGIN
+LEDGER_H = WINDOW_H - LEDGER_Y - BUTTON_H - PANEL_MARGIN * 2 # Correctly uses PANEL_MARGIN
+RIGHT_PANEL_X = GRID_PX + GRID_LEFT_MARGIN + PANEL_MARGIN # Adjusted to account for grid left margin
+RIGHT_PANEL_W = WINDOW_W - RIGHT_PANEL_X - PANEL_MARGIN # Adjusted to account for new X and right margin
 
 # Game States
 SETUP = "SETUP"
@@ -74,6 +74,7 @@ class Game:
         # Play Screen UI (initialized in _start_game_action)
         self.grid_view: Optional[GridView] = None
         self.player_panel: Optional[PlayerPanel] = None # Placeholder for PlayerPanel
+        # Use constants directly, as they are now calculated correctly at the top level
         self.ledger_panel = LedgerPanel(pg.Rect(RIGHT_PANEL_X, LEDGER_Y, RIGHT_PANEL_W, LEDGER_H))
         self.lock_coalition_button = Button(
             pg.Rect(RIGHT_PANEL_X, WINDOW_H - BUTTON_H - PANEL_MARGIN, RIGHT_PANEL_W // 2 - PANEL_MARGIN // 2, BUTTON_H),
@@ -199,10 +200,11 @@ class Game:
             self.grid_size,
             self._handle_grid_click
         )
+        # Instantiate PlayerPanel using the top-level constants
         self.player_panel = PlayerPanel(
-             pg.Rect(RIGHT_PANEL_X, PLAYER_PANEL_Y, RIGHT_PANEL_W, PLAYER_PANEL_H),
-             self.players,
-             self._handle_commit_toggle
+            pg.Rect(RIGHT_PANEL_X, PLAYER_PANEL_Y, RIGHT_PANEL_W, PLAYER_PANEL_H),
+            self.players,
+            self._handle_commit_toggle
         )
         self.state = AWAIT_COMMIT
 
@@ -455,22 +457,20 @@ class Game:
     # ---------- State-Specific Draw Methods ---------------------------------
 
     def _draw_top_bar(self):
-        bar_rect = pg.Rect(0, 0, WINDOW_W, TopBarH)
-        pg.draw.rect(self.screen, (50, 50, 50), bar_rect) # Dark grey bar
-        title_txt = self.font.render("Battleship Treasure Hunt", True, (255, 255, 255))
-        self.screen.blit(title_txt, (10, 10))
-
+        # Top bar with game state info
+        pg.draw.rect(self.screen, (70, 130, 180), (0, 0, WINDOW_W, TopBarH)) # Steel Blue
+        state_text = f"State: {self.state}"
+        state_surf = self.font.render(state_text, True, (255, 255, 255))
+        self.screen.blit(state_surf, (10, 10))
+        
         if self.state != SETUP:
-             round_txt = self.font.render(f"Round: {self.round}", True, (255, 255, 255))
-             self.screen.blit(round_txt, (WINDOW_W // 2 - 50, 10))
-
-             coalition_str = "None"
-             if self.current_coalition:
-                  # Use short names (e.g., initials) if available
-                  names = sorted(self.players[i].get_short_name() for i in self.current_coalition)
-                  coalition_str = ",".join(names)
-             coalition_txt = self.font.render(f"Coalition: {coalition_str}", True, (255, 255, 255))
-             self.screen.blit(coalition_txt, (WINDOW_W - 250, 10))
+            round_text = f"Round: {self.round}"
+            round_surf = self.font.render(round_text, True, (255, 255, 255))
+            self.screen.blit(round_surf, (200, 10))
+            
+            coalition_text = f"Coalition: {', '.join(str(i) for i in sorted(self.current_coalition)) or 'None'}"
+            coalition_surf = self.font.render(coalition_text, True, (255, 255, 255))
+            self.screen.blit(coalition_surf, (400, 10))
 
 
     def _draw_setup(self):
@@ -517,6 +517,7 @@ class Game:
         if self.state == AWAIT_GUESS:
              # Draw instruction text
              guess_txt = self.font.render("Click on the grid to make a guess!", True, (200, 0, 0))
+             # Adjust instruction text position based on new GRID_PX
              self.screen.blit(guess_txt, (GRID_LEFT_MARGIN, TopBarH + GRID_TOP_MARGIN + GRID_PX + 5))
 
 
