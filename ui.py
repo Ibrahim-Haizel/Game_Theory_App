@@ -151,22 +151,25 @@ class GridView:  # noqa: D101
         if clue_positions:
             # Draw each player's clue area with their assigned color
             for (player_idx, positions, is_restrictive) in clue_positions:
-                if not is_restrictive:
-                    continue  # Skip non-restrictive clues
-                # Determine player color with semi-transparency
+                # Determine player color with increased opacity
                 if players and 0 <= player_idx < len(players):
                     r, g, b = players[player_idx].color
                 else:
-                    r, g, b = (255, 0, 0)
-                outline_color = (r, g, b, 120)
-                # Create a surface to draw borders
-                outline_surface = pg.Surface((self.cell_size, self.cell_size), pg.SRCALPHA)
-                pg.draw.rect(outline_surface, outline_color, (0, 0, self.cell_size, self.cell_size), 3)
-                # Draw outlines for all cells in this player's position set
-                for (r_idx, c_idx) in positions:
-                    cell_x = self.x0 + c_idx * self.cell_size
-                    cell_y = self.y0 + r_idx * self.cell_size
-                    surf.blit(outline_surface, (cell_x, cell_y))
+                    r, g, b = (255, 0, 0) # Default red if player not found
+                outline_color = (r, g, b, 200) # Increased alpha for more vibrancy
+
+                if is_restrictive:
+                    # Restrictive: Draw outlines for specific cells
+                    outline_surface = pg.Surface((self.cell_size, self.cell_size), pg.SRCALPHA)
+                    pg.draw.rect(outline_surface, outline_color, (0, 0, self.cell_size, self.cell_size), 3)
+                    for (r_idx, c_idx) in positions:
+                        cell_x = self.x0 + c_idx * self.cell_size
+                        cell_y = self.y0 + r_idx * self.cell_size
+                        surf.blit(outline_surface, (cell_x, cell_y))
+                else:
+                    # Non-restrictive: Draw outline around the entire grid perimeter
+                    perimeter_rect = pg.Rect(self.x0, self.y0, self.size_px, self.size_px)
+                    pg.draw.rect(surf, outline_color, perimeter_rect, 4) # Thicker perimeter line
 
         # Highlight allowed guess cells
         if allowed is not None:
