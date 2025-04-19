@@ -38,6 +38,9 @@ AWAIT_GUESS = "AWAIT_GUESS"   # Coalition locked, clues revealed, waiting for gr
 REVEAL = "REVEAL"             # Brief state to show hit/miss before resetting
 END = "END"
 
+MAX_PLAYERS = 6
+MIN_PLAYERS = 3
+
 class Game:
     # ---------- Lifecycle ---------------------------------------------------
     def __init__(self) -> None:
@@ -64,12 +67,19 @@ class Game:
         self.last_guess_result: Optional[Tuple[int, int, bool, int]] = None # (r, c, hit, coins)
         self.allowed_guesses: set[tuple[int,int]] | None = None  # Allowed cells after lock
         self.clue_positions = []  # List of (player_idx, positions, is_restrictive) for grid highlighting
+        self.setup_error_message = "" # To display errors on setup screen
 
-        # --- UI Widgets ---
-        # Setup Screen UI (Example - needs proper implementation)
-        self.setup_input = TextInput(pg.Rect(100, 100, 300, 30), "Enter number of players (3-6):")
-        self.load_clues_button = Button(pg.Rect(100, 150, 150, 30), "Load Clues", self._load_clues_action)
-        self.start_game_button = Button(pg.Rect(100, 200, 150, 30), "Start Game", self._start_game_action)
+        # --- Setup UI Widgets ---
+        input_w = 300
+        input_h = 30
+        button_w = 150
+        # Start with MIN_PLAYERS input boxes
+        self.player_name_inputs: List[TextInput] = [
+            TextInput(pg.Rect(0, 0, input_w, input_h), f"Player {i+1} Name:") 
+            for i in range(MIN_PLAYERS)
+        ]
+        self.add_player_button = Button(pg.Rect(0, 0, button_w, input_h), "Add Player", self._add_player_action)
+        self.start_game_button = Button(pg.Rect(0, 0, button_w, BUTTON_H), "Start Game", self._start_game_action) 
 
         # Play Screen UI (initialized in _start_game_action)
         self.grid_view: Optional[GridView] = None
@@ -130,83 +140,118 @@ class Game:
         else:
             print(f"Debug: Sound '{name}' not loaded or unavailable.")
 
+    def _add_player_action(self):
+        """Adds a new player name input box if below the max limit."""
+        if len(self.player_name_inputs) < MAX_PLAYERS:
+            next_player_num = len(self.player_name_inputs) + 1
+            input_w = 300
+            input_h = 30
+            new_input = TextInput(pg.Rect(0, 0, input_w, input_h), f"Player {next_player_num} Name:")
+            self.player_name_inputs.append(new_input)
+            print(f"Added input for player {next_player_num}")
+        else:
+            print("Maximum number of players reached.")
+            self.setup_error_message = f"Maximum {MAX_PLAYERS} players allowed."
+
     # ---------- State Transition Actions ------------------------------------
-
-    def _load_clues_action(self):
-        # Placeholder: Implement file dialog to select clues.json
-        # For now, assumes default clues.json exists
-        print("Load Clues button clicked (placeholder)")
-        try:
-            clues_path = Path("clues.json")
-            if not clues_path.exists():
-                 # Try demo clues if default not found
-                 clues_path = Path("./demo_clues.json")
-                 if not clues_path.exists():
-                      print("Error: clues.json or demo_clues.json not found!")
-                      return # Stay in setup
-            self.players = load_clues(clues_path)
-            self.commits = [False] * len(self.players)
-            print(f"Loaded {len(self.players)} players from {clues_path}.")
-            # Update setup UI if needed (e.g., show loaded player names)
-        except Exception as e:
-            print(f"Error loading clues: {e}")
-            # Reset players if loading failed?
-            self.players = []
-            self.commits = []
-
 
     def _start_game_action(self):
         print("Start Game button clicked")
-        
-        # --- Get Player Count from TextInput ---
-        try:
-            num_players_str = self.setup_input.get_text()
-            if not num_players_str:
-                 print("Error: Please enter the number of players (3-6).")
-                 return
-            num_players = int(num_players_str)
-            if not (3 <= num_players <= 6):
-                 print(f"Error: Invalid number of players ({num_players}). Must be 3-6.")
-                 return
-        except ValueError:
-            print(f"Error: Invalid input '{num_players_str}'. Please enter a number.")
-            return
-        
-        # --- Load Clues (If not already loaded or if player count mismatch?) ---
-        # Option 1: Assume clues are loaded via button first.
-        if not self.players:
-             print("Error: Load clues before starting.")
-             return
-        if len(self.players) != num_players:
-             print(f"Error: Number of players entered ({num_players}) does not match loaded clues ({len(self.players)}).")
-             # Optional: Try reloading default clues matching num_players? Requires changes to load_clues/JSON structure.
-             # Or just force user to load correct file.
-             print("Please load a clues file matching the entered number of players.")
-             return
+        self.setup_error_message = "" # Clear previous errors
 
-        # --- Initialize Play State (rest of the function remains the same) ---
-        print(f"Starting game with {num_players} players...")
-        self.grid = load_board(Path("board.json"), self.grid_size)
+        # --- Get Player Names & Infer Count ---
+        entered_names = []
+        for input_box in self.player_name_inputs:
+            name = input_box.get_text().strip()
+            if name: # Only count non-empty names
+                entered_names.append(name)
+            # Optional: Clear the input box after reading? 
+            # input_box.text = ""
+            # input_box.txt_surface = Font.render("", True, TEXT_COLOR)
+
+        num_players = len(entered_names)
+
+        # --- Validate Player Count ---
+        if not (MIN_PLAYERS <= num_players <= MAX_PLAYERS):
+            self.setup_error_message = f"Error: Must have between {MIN_PLAYERS} and {MAX_PLAYERS} players with names entered. Found {num_players}."
+            print(self.setup_error_message)
+            return
+
+        # --- Check for Duplicate Names ---
+        if len(entered_names) != len(set(entered_names)):
+            self.setup_error_message = "Error: Player names must be unique."
+            print(self.setup_error_message)
+            return
+
+        # --- Load Clues Automatically ---
+        loaded_players: List[Player] = []
+        try:
+            clues_path = Path("clues.json")
+            if not clues_path.exists():
+                 clues_path = Path("./demo_clues.json") # Try demo file
+                 if not clues_path.exists():
+                      self.setup_error_message = "Error: clues.json or demo_clues.json not found!"
+                      print(self.setup_error_message)
+                      return
+            loaded_players = load_clues(clues_path)
+            print(f"Loaded {len(loaded_players)} player definitions from {clues_path}.")
+
+            if len(loaded_players) < num_players:
+                self.setup_error_message = f"Error: Clues file only defines {len(loaded_players)} players, but {num_players} were entered."
+                print(self.setup_error_message)
+                return
+
+            # Slice to get the requested number of players
+            self.players = loaded_players[:num_players]
+
+        except Exception as e:
+            self.setup_error_message = f"Error loading clues: {e}"
+            print(self.setup_error_message)
+            self.players = [] # Ensure players list is empty on error
+            return
+
+        # --- Override Names ---
+        for i, name in enumerate(entered_names):
+            self.players[i].name = name
+        print(f"Final player list: { [p.name for p in self.players] }")
+
+        # --- Initialize Play State ---
+        print(f"Starting game with {num_players} players: {[p.name for p in self.players]}")
+        # Assuming board.json exists and is valid
+        try:
+            self.grid = load_board(Path("board.json"), self.grid_size) 
+        except Exception as e:
+            self.setup_error_message = f"Error loading board.json: {e}"
+            print(self.setup_error_message)
+            self.players = [] # Reset players
+            return
+            
         self.ledger = {}
         self.revealed = []
+        self.commits = [False] * len(self.players) # Initialize commits based on final player count
         self.round = 1
         self.current_coalition = frozenset()
         self.coalition_locked = False
         self.last_guess_result = None
+        self.allowed_guesses = None
+        self.clue_positions = []
 
+        # Initialize Play UI elements
         self.grid_view = GridView(
             (GRID_LEFT_MARGIN, TopBarH + GRID_TOP_MARGIN),
             GRID_PX,
             self.grid_size,
             self._handle_grid_click
         )
-        # Instantiate PlayerPanel using the top-level constants
         self.player_panel = PlayerPanel(
             pg.Rect(RIGHT_PANEL_X, PLAYER_PANEL_Y, RIGHT_PANEL_W, PLAYER_PANEL_H),
             self.players,
             self._handle_commit_toggle
         )
+        self.ledger_panel = LedgerPanel(pg.Rect(RIGHT_PANEL_X, LEDGER_Y, RIGHT_PANEL_W, LEDGER_H))
+
         self.state = AWAIT_COMMIT
+        print("Transitioning to AWAIT_COMMIT state.")
 
     def _handle_commit_toggle(self, player_index: int):
          if self.state == AWAIT_COMMIT:
@@ -415,21 +460,31 @@ class Game:
     # ---------- State-Specific Event Handlers -------------------------------
 
     def _handle_setup_event(self, event: pg.event.Event):
-         # Handle input for setup_input, button clicks
-         self.setup_input.handle_event(event)
-         self.load_clues_button.handle_event(event)
+         # Handle input for all current TextInputs
+         for input_box in self.player_name_inputs:
+              input_box.handle_event(event)
+         
+         # Handle Add Player button click (only if shown)
+         if len(self.player_name_inputs) < MAX_PLAYERS:
+             self.add_player_button.handle_event(event)
+             
+         # Handle start button click
          self.start_game_button.handle_event(event)
-         
-         # Allow pressing Enter in the text box OR clicking Start button
+
+         # Allow pressing Enter in ANY text box OR clicking Start button
          start_triggered = False
-         if event.type == pg.KEYDOWN and event.key == pg.K_RETURN and self.setup_input.active:
-             self.setup_input.active = False # Deactivate input on enter
-             self.setup_input.color = COLOR_INACTIVE # Update color
-             start_triggered = True
-         # Check button clicks as well (handled by button.handle_event)
-         # If start button was clicked, its onclick (_start_game_action) is called directly.
-         
-         # If Enter was pressed in the box, call the start action
+         if event.type == pg.KEYDOWN and event.key == pg.K_RETURN:
+             active_input_found = False
+             for input_box in self.player_name_inputs:
+                  if input_box.active:
+                       input_box.active = False
+                       input_box.color = COLOR_INACTIVE
+                       active_input_found = True
+                       break # Only deactivate one
+             if active_input_found:
+                 start_triggered = True
+
+         # If Enter was pressed OR start button was clicked, call the start action
          if start_triggered:
               self._start_game_action()
 
@@ -474,24 +529,45 @@ class Game:
 
 
     def _draw_setup(self):
-        # Draw setup UI elements centered or positioned nicely
-        title_txt = self.font.render("Game Setup", True, (0,0,0), BG_COLOR)
-        self.screen.blit(title_txt, (WINDOW_W // 2 - title_txt.get_width() // 2, 50))
+        # Centered Title
+        title_txt = self.font.render("Game Setup", True, (0, 0, 0))
+        title_rect = title_txt.get_rect(center=(WINDOW_W // 2, 80))
+        self.screen.blit(title_txt, title_rect)
 
-        self.setup_input.draw(self.screen)
-        self.load_clues_button.draw(self.screen)
+        # Position UI elements vertically
+        widget_y = 130 # Start a bit lower
+        widget_spacing = 45 # Space between input boxes
+        button_top_margin = 25 # Space above buttons
+
+        # Player Name Inputs
+        for i, input_box in enumerate(self.player_name_inputs):
+            input_box.rect.centerx = WINDOW_W // 2
+            input_box.rect.y = widget_y
+            input_box.draw(self.screen)
+            widget_y += widget_spacing
+        
+        widget_y += button_top_margin # Add space before buttons
+
+        # Add Player Button (conditional)
+        if len(self.player_name_inputs) < MAX_PLAYERS:
+            self.add_player_button.rect.centerx = WINDOW_W // 2
+            self.add_player_button.rect.y = widget_y
+            self.add_player_button.draw(self.screen)
+            widget_y += self.add_player_button.rect.height + 15 # Space after add button
+
+        # Start Game Button
+        self.start_game_button.rect.centerx = WINDOW_W // 2
+        # Use the taller BUTTON_H for start button height
+        self.start_game_button.rect.height = BUTTON_H 
+        self.start_game_button.rect.y = widget_y 
         self.start_game_button.draw(self.screen)
+        widget_y += self.start_game_button.rect.height + 15 # Space after start button
 
-        # Display loaded players?
-        if self.players:
-             y = 250
-             player_list_txt = self.font.render("Loaded Players:", True, (0,0,0))
-             self.screen.blit(player_list_txt, (100, y))
-             y += 20
-             for player in self.players:
-                  p_txt = self.font.render(f"- {player.name}", True, player.color)
-                  self.screen.blit(p_txt, (120, y))
-                  y += 20
+        # Display Error Message (if any)
+        if self.setup_error_message:
+            error_surf = self.font.render(self.setup_error_message, True, (200, 0, 0)) # Red color
+            error_rect = error_surf.get_rect(center=(WINDOW_W // 2, widget_y))
+            self.screen.blit(error_surf, error_rect)
 
 
     def _draw_play(self):

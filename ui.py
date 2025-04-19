@@ -44,8 +44,8 @@ class TextInput:
                 elif event.key == pg.K_BACKSPACE:
                     self.text = self.text[:-1]
                 else:
-                    # Basic validation - allow only digits for now
-                    if event.unicode.isdigit():
+                    # Allow letters, numbers, and spaces for names
+                    if event.unicode.isalnum() or event.unicode == ' ': 
                         self.text += event.unicode
                 self.txt_surface = Font.render(self.text, True, TEXT_COLOR)
 
