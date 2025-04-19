@@ -3,10 +3,11 @@ from __future__ import annotations
 
 import pygame as pg
 from pathlib import Path
-from typing import Dict, Tuple, List, FrozenSet, Optional
+from typing import Dict, Tuple, List, FrozenSet, Optional, Set
 import io
 import requests
 import csv # For CSV export
+import itertools # Need this for combinations
 
 from models import Player, Treasure, Grid, Coalition, load_clues, load_board
 from shapley import shapley_sample
@@ -354,20 +355,97 @@ class Game:
         if self.state == END: return # Already ended
         print("Ending game and calculating payouts...")
         self.state = END
-        values = {k: v for k, v in self.ledger.items()}
+        
+        # --- Calculate the characteristic function --- 
+        values = self._calculate_characteristic_function()
+        # --- WAS: values = {k: v for k, v in self.ledger.items()} --- 
+        
         weights = [p.weight for p in self.players]
         try:
              # Use a slightly higher default sample count
              self.payouts = shapley_sample(values, len(self.players), weights, samples=10000)
-             print(f"Shapley Payouts: {self.payouts}")
+             print(f"Shapley Payouts calculated: {self.payouts}")
+             # Verification: Check if sum of payouts roughly equals v(N)
+             grand_coalition = frozenset(range(len(self.players)))
+             total_potential_value = values.get(grand_coalition, 0)
+             print(f"Value of grand coalition v(N) = {total_potential_value}")
+             print(f"Sum of calculated Shapley payouts = {sum(self.payouts):.2f}")
         except Exception as e:
              print(f"Error calculating Shapley values: {e}")
              self.payouts = None # Indicate calculation failure
 
-        # Initialize End Screen UI
-        self.export_button = Button(pg.Rect(WINDOW_W // 2 - 160, WINDOW_H - 60, 150, 30), "Export Results", self._export_results)
-        self.restart_button = Button(pg.Rect(WINDOW_W // 2 + 10, WINDOW_H - 60, 150, 30), "Restart Game", self._restart_game)
-
+        # Initialize End Screen UI (or ensure they exist)
+        self._initialize_end_buttons()
+        
+    def _initialize_end_buttons(self):
+        """Helper to create end game buttons if they don't exist."""
+        if not hasattr(self, 'export_button') or self.export_button is None:
+             self.export_button = Button(pg.Rect(WINDOW_W // 2 - 160, WINDOW_H - 60, 150, 30), "Export Results", self._export_results)
+        if not hasattr(self, 'restart_button') or self.restart_button is None:
+             self.restart_button = Button(pg.Rect(WINDOW_W // 2 + 10, WINDOW_H - 60, 150, 30), "Restart Game", self._restart_game)
+    
+    def _calculate_characteristic_function(self) -> Dict[FrozenSet[int], int]:
+        """Calculates the characteristic function v(S) for all coalitions S.
+        
+        v(S) is the total value of treasures that coalition S can uniquely 
+        identify and claim based on their combined clues.
+        Assumes self.players and self.grid are populated.
+        """
+        print("Calculating characteristic function v(S)...")
+        if not self.players or not self.grid:
+            print("Warning: Cannot calculate v(S) without players or grid.")
+            return {}
+            
+        n = len(self.players)
+        v: Dict[FrozenSet[int], int] = {}
+        
+        # Map (row, col) to treasure value for quick lookup
+        treasure_map: Dict[Tuple[int, int], int] = {}
+        for r_idx, row in enumerate(self.grid):
+            for c_idx, treasure in enumerate(row):
+                if treasure: # Assuming Treasure object if not None
+                    treasure_map[(r_idx, c_idx)] = treasure.value
+        
+        # Iterate through all possible non-empty coalitions
+        for k in range(1, n + 1):
+            for coalition_indices_tuple in itertools.combinations(range(n), k):
+                coalition_indices = frozenset(coalition_indices_tuple)
+                
+                # Combine clues for this coalition
+                coalition_allowed_cells: Set[Tuple[int, int]] | None = None
+                is_first_player = True
+                for player_idx in coalition_indices:
+                    player_clue_cells = self.players[player_idx].allowed_positions(self.grid_size)
+                    
+                    # If any player allows all cells, the coalition effectively allows all cells relevant to them.
+                    # For Shapley, we need the intersection: what can ONLY this coalition get?
+                    if is_first_player:
+                        coalition_allowed_cells = player_clue_cells
+                        is_first_player = False
+                    else:
+                        # The power of the coalition is determined by the *intersection* 
+                        # of their allowed cells, as this represents the cells ONLY they
+                        # together can identify.
+                        if coalition_allowed_cells is not None: # Should always be true after first player
+                             coalition_allowed_cells.intersection_update(player_clue_cells)
+                        # If intersection becomes empty, this specific coalition can't pinpoint anything
+                        if not coalition_allowed_cells:
+                             break 
+                             
+                # Calculate value for this coalition
+                coalition_value = 0
+                if coalition_allowed_cells: # If intersection is not empty
+                    for (r, c), value in treasure_map.items():
+                        if (r, c) in coalition_allowed_cells:
+                            coalition_value += value
+                            
+                v[coalition_indices] = coalition_value
+                # print(f"  v({set(coalition_indices)}) = {coalition_value}") # Debug print
+        
+        # Add value for the empty set (always 0)
+        v[frozenset()] = 0
+        print("Finished calculating v(S).")
+        return v
 
     def _export_results(self):
         if self.state != END: return
@@ -604,16 +682,18 @@ class Game:
         self.screen.blit(header, header_rect)
         y += 50
 
+        # Check if payouts were calculated successfully
         if self.payouts is not None:
-            total_ledger = sum(self.ledger.values())
+            # --- Display calculated payouts --- 
+            total_ledger = sum(self.ledger.values()) # Still show actual treasure found
             total_payout = sum(self.payouts)
-            info_txt = self.font.render(f"Total Treasure Found: {total_ledger} coins. Total Payout: {total_payout:.2f} coins.", True, (50, 50, 50))
+            # Display the sum of calculated payouts for verification
+            info_txt = self.font.render(f"Total Treasure Found: {total_ledger} coins. Calculated Total Payout: {total_payout:.2f} coins.", True, (50, 50, 50))
             info_rect = info_txt.get_rect(center=(WINDOW_W // 2, y))
             self.screen.blit(info_txt, info_rect)
             y += 30
 
-        for i, p in enumerate(self.players):
-                # Ensure payout list length matches player list
+            for i, p in enumerate(self.players):
                 if i < len(self.payouts):
                      payout_val = self.payouts[i]
                      txt = self.font.render(f"{p.name}: {payout_val:.2f} coins", True, p.color)
@@ -621,14 +701,24 @@ class Game:
                      self.screen.blit(txt, txt_rect)
                      y += 25
                 else:
-                     print(f"Warning: Payout list length mismatch for player {i}")
-        else:
+                     # This case indicates an internal error
+                     print(f"Error: Payout list length mismatch for player {i}")
+                     error_surf = self.font.render(f"ERROR: PAYOUT MISMATCH {i}", True, (255,0,0))
+                     error_rect = error_surf.get_rect(center=(WINDOW_W // 2, y))
+                     self.screen.blit(error_surf, error_rect)
+                     y += 25
+                     # Potentially stop drawing more payouts if mismatch occurs
+                     break 
+        # --- CHANGE HERE: Correct else block for handling payout errors ---
+        else: 
+            # self.payouts is None, display the error message
             error_txt = self.font.render("Error calculating Shapley values.", True, (255, 0, 0))
             error_rect = error_txt.get_rect(center=(WINDOW_W // 2, y))
             self.screen.blit(error_txt, error_rect)
             y += 30
+        # --- END CHANGE ---
 
-        # Draw end screen buttons
+        # Draw end screen buttons (always draw these)
         if self.export_button: self.export_button.draw(self.screen)
         if self.restart_button: self.restart_button.draw(self.screen)
 
