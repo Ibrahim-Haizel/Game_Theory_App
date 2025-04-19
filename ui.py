@@ -203,25 +203,29 @@ class GridView:  # noqa: D101
         if clue_positions:
             # Draw each player's clue area with their assigned color
             for (player_idx, positions, is_restrictive) in clue_positions:
-                # Determine player color with increased opacity
+                # Determine player color (ensure it exists)
                 if players and 0 <= player_idx < len(players):
-                    r, g, b = players[player_idx].color
+                    player_color = players[player_idx].color
                 else:
-                    r, g, b = (255, 0, 0) # Default red if player not found
-                outline_color = (r, g, b, 200) # Increased alpha for more vibrancy
+                    player_color = (255, 0, 0) # Default red if player not found
+                
+                # Use the player's exact color for the outline
+                outline_color = player_color 
 
                 if is_restrictive:
-                    # Restrictive: Draw outlines for specific cells
-                    outline_surface = pg.Surface((self.cell_size, self.cell_size), pg.SRCALPHA)
-                    pg.draw.rect(outline_surface, outline_color, (0, 0, self.cell_size, self.cell_size), 3)
+                    # Restrictive: Draw outlines for specific cells directly onto the main surface
+                    outline_thickness = 3 
                     for (r_idx, c_idx) in positions:
                         cell_x = self.x0 + c_idx * self.cell_size
                         cell_y = self.y0 + r_idx * self.cell_size
-                        surf.blit(outline_surface, (cell_x, cell_y))
+                        cell_rect = pg.Rect(cell_x, cell_y, self.cell_size, self.cell_size)
+                        # Draw directly onto surf, no intermediate alpha surface
+                        pg.draw.rect(surf, outline_color, cell_rect, outline_thickness) 
                 else:
                     # Non-restrictive: Draw outline around the entire grid perimeter
                     perimeter_rect = pg.Rect(self.x0, self.y0, self.size_px, self.size_px)
-                    pg.draw.rect(surf, outline_color, perimeter_rect, 4) # Thicker perimeter line
+                    outline_thickness = 4 
+                    pg.draw.rect(surf, outline_color, perimeter_rect, outline_thickness)
 
         # Highlight allowed guess cells
         if allowed is not None:
