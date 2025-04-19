@@ -59,7 +59,7 @@ Coalition = FrozenSet[int]  # index set → immutable & hashable
 
 COLOR_PALETTE: list[Tuple[int, int, int]] = [
     (255, 99, 71),    # tomato
-    (60, 179, 113),   # medium‑sea‑green
+    (148, 0, 211),   # dark-violet (replaced medium-sea-green)
     (65, 105, 225),   # royal‑blue
     (238, 130, 238),  # violet
     (255, 215, 0),    # gold

@@ -315,13 +315,6 @@ class PlayerPanel:
                 clue_txt = FontSmall.render(f"   Clue: {player.clue}", True, (50, 50, 50))
                 clue_pos = (self.rect.x + 30, y_offset + 22)
                 screen.blit(clue_txt, clue_pos)
-                # --- Draw thick outline if all clues committed ---
-                if all_committed:
-                    outline_rect = pg.Rect(self.rect.x + 28, y_offset + 20, 220, 20)
-                    if clue_types[i] == 'restrictive':
-                        pg.draw.rect(screen, name_color, outline_rect, 4)  # Use player color for restrictive outline
-                    elif clue_types[i] == 'nonrestrictive':
-                        pg.draw.rect(screen, (100, 100, 100), outline_rect, 4)  # Grey thick
             else:
                 clue_txt = FontSmall.render("   Clue: [Hidden]", True, (150, 150, 150))
                 screen.blit(clue_txt, (self.rect.x + 30, y_offset + 22))
