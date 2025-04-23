@@ -11,7 +11,7 @@ import itertools # Need this for combinations
 
 from models import Player, Treasure, Grid, Coalition, load_clues, load_board
 from shapley import shapley_sample
-from ui import Button, GridView, LedgerPanel, Font, PlayerPanel, TextInput, COLOR_INACTIVE # Added COLOR_INACTIVE
+from ui import Button, GridView, LedgerPanel, Font, FontSmall, PlayerPanel, TextInput, COLOR_INACTIVE # Added COLOR_INACTIVE
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -226,7 +226,7 @@ class Game:
             print(self.setup_error_message)
             self.players = [] # Reset players
             return
-            
+        
         self.ledger = {}
         self.revealed = []
         self.commits = [False] * len(self.players) # Initialize commits based on final player count
@@ -245,9 +245,9 @@ class Game:
             self._handle_grid_click
         )
         self.player_panel = PlayerPanel(
-            pg.Rect(RIGHT_PANEL_X, PLAYER_PANEL_Y, RIGHT_PANEL_W, PLAYER_PANEL_H),
-            self.players,
-            self._handle_commit_toggle
+             pg.Rect(RIGHT_PANEL_X, PLAYER_PANEL_Y, RIGHT_PANEL_W, PLAYER_PANEL_H),
+             self.players,
+             self._handle_commit_toggle
         )
         self.ledger_panel = LedgerPanel(pg.Rect(RIGHT_PANEL_X, LEDGER_Y, RIGHT_PANEL_W, LEDGER_H))
 
@@ -356,19 +356,16 @@ class Game:
         print("Ending game and calculating payouts...")
         self.state = END
         
-        # --- Calculate the characteristic function --- 
-        values = self._calculate_characteristic_function()
-        # --- WAS: values = {k: v for k, v in self.ledger.items()} --- 
+        # --- Calculate the characteristic function based on ledger subsets ---
+        values = self._calculate_ledger_based_characteristic_function() # Use the new function
         
         weights = [p.weight for p in self.players]
         try:
-             # Use a slightly higher default sample count
              self.payouts = shapley_sample(values, len(self.players), weights, samples=10000)
-             print(f"Shapley Payouts calculated: {self.payouts}")
-             # Verification: Check if sum of payouts roughly equals v(N)
-             grand_coalition = frozenset(range(len(self.players)))
-             total_potential_value = values.get(grand_coalition, 0)
-             print(f"Value of grand coalition v(N) = {total_potential_value}")
+             print(f"Shapley Payouts calculated (ledger-based): {self.payouts}")
+             # Verification: Check if sum of payouts roughly equals ledger total
+             total_ledger_value = sum(self.ledger.values()) # Get actual ledger total
+             print(f"Total treasure found (ledger sum) = {total_ledger_value}") # Use ledger total
              print(f"Sum of calculated Shapley payouts = {sum(self.payouts):.2f}")
         except Exception as e:
              print(f"Error calculating Shapley values: {e}")
@@ -376,75 +373,45 @@ class Game:
 
         # Initialize End Screen UI (or ensure they exist)
         self._initialize_end_buttons()
-        
+
     def _initialize_end_buttons(self):
         """Helper to create end game buttons if they don't exist."""
         if not hasattr(self, 'export_button') or self.export_button is None:
-             self.export_button = Button(pg.Rect(WINDOW_W // 2 - 160, WINDOW_H - 60, 150, 30), "Export Results", self._export_results)
+            self.export_button = Button(pg.Rect(WINDOW_W // 2 - 160, WINDOW_H - 60, 150, 30), "Export Results", self._export_results)
         if not hasattr(self, 'restart_button') or self.restart_button is None:
-             self.restart_button = Button(pg.Rect(WINDOW_W // 2 + 10, WINDOW_H - 60, 150, 30), "Restart Game", self._restart_game)
-    
-    def _calculate_characteristic_function(self) -> Dict[FrozenSet[int], int]:
-        """Calculates the characteristic function v(S) for all coalitions S.
+            self.restart_button = Button(pg.Rect(WINDOW_W // 2 + 10, WINDOW_H - 60, 150, 30), "Restart Game", self._restart_game)
+
+    def _calculate_ledger_based_characteristic_function(self) -> Dict[FrozenSet[int], int]:
+        """Calculates v(S) based on ledger subsets.
         
-        v(S) is the total value of treasures that coalition S can uniquely 
-        identify and claim based on their combined clues.
-        Assumes self.players and self.grid are populated.
+        v(S) is the sum of coins collected by any coalition C
+        recorded in the ledger where C is a subset of S.
+        This ensures v(S) is non-decreasing.
         """
-        print("Calculating characteristic function v(S)...")
-        if not self.players or not self.grid:
-            print("Warning: Cannot calculate v(S) without players or grid.")
+        print("Calculating ledger-based characteristic function v(S)...")
+        if not self.players:
+            print("Warning: Cannot calculate v(S) without players.")
             return {}
-            
+        
         n = len(self.players)
         v: Dict[FrozenSet[int], int] = {}
         
-        # Map (row, col) to treasure value for quick lookup
-        treasure_map: Dict[Tuple[int, int], int] = {}
-        for r_idx, row in enumerate(self.grid):
-            for c_idx, treasure in enumerate(row):
-                if treasure: # Assuming Treasure object if not None
-                    treasure_map[(r_idx, c_idx)] = treasure.value
-        
-        # Iterate through all possible non-empty coalitions
-        for k in range(1, n + 1):
+        # Iterate through all possible coalition sizes (0 to n)
+        for k in range(n + 1): 
+            # Iterate through all coalitions S of size k
             for coalition_indices_tuple in itertools.combinations(range(n), k):
-                coalition_indices = frozenset(coalition_indices_tuple)
+                S = frozenset(coalition_indices_tuple)
                 
-                # Combine clues for this coalition
-                coalition_allowed_cells: Set[Tuple[int, int]] | None = None
-                is_first_player = True
-                for player_idx in coalition_indices:
-                    player_clue_cells = self.players[player_idx].allowed_positions(self.grid_size)
-                    
-                    # If any player allows all cells, the coalition effectively allows all cells relevant to them.
-                    # For Shapley, we need the intersection: what can ONLY this coalition get?
-                    if is_first_player:
-                        coalition_allowed_cells = player_clue_cells
-                        is_first_player = False
-                    else:
-                        # The power of the coalition is determined by the *intersection* 
-                        # of their allowed cells, as this represents the cells ONLY they
-                        # together can identify.
-                        if coalition_allowed_cells is not None: # Should always be true after first player
-                             coalition_allowed_cells.intersection_update(player_clue_cells)
-                        # If intersection becomes empty, this specific coalition can't pinpoint anything
-                        if not coalition_allowed_cells:
-                             break 
-                             
-                # Calculate value for this coalition
+                # Calculate v(S) by summing ledger entries where C is a subset of S
                 coalition_value = 0
-                if coalition_allowed_cells: # If intersection is not empty
-                    for (r, c), value in treasure_map.items():
-                        if (r, c) in coalition_allowed_cells:
-                            coalition_value += value
-                            
-                v[coalition_indices] = coalition_value
-                # print(f"  v({set(coalition_indices)}) = {coalition_value}") # Debug print
+                for C, value in self.ledger.items():
+                    if C.issubset(S):
+                        coalition_value += value
+                        
+                v[S] = coalition_value
+                # print(f"  v({set(S)}) = {coalition_value}") # Debug print
         
-        # Add value for the empty set (always 0)
-        v[frozenset()] = 0
-        print("Finished calculating v(S).")
+        print("Finished calculating ledger-based v(S).")
         return v
 
     def _export_results(self):
@@ -548,19 +515,19 @@ class Game:
              
          # Handle start button click
          self.start_game_button.handle_event(event)
-
+         
          # Allow pressing Enter in ANY text box OR clicking Start button
          start_triggered = False
          if event.type == pg.KEYDOWN and event.key == pg.K_RETURN:
              active_input_found = False
              for input_box in self.player_name_inputs:
-                  if input_box.active:
-                       input_box.active = False
-                       input_box.color = COLOR_INACTIVE
-                       active_input_found = True
-                       break # Only deactivate one
+                if input_box.active:
+                    input_box.active = False
+                    input_box.color = COLOR_INACTIVE
+                    active_input_found = True
+                    break # Only deactivate one
              if active_input_found:
-                 start_triggered = True
+                start_triggered = True
 
          # If Enter was pressed OR start button was clicked, call the start action
          if start_triggered:
@@ -595,7 +562,7 @@ class Game:
         state_text = f"State: {self.state}"
         state_surf = self.font.render(state_text, True, (255, 255, 255))
         self.screen.blit(state_surf, (10, 10))
-        
+
         if self.state != SETUP:
             round_text = f"Round: {self.round}"
             round_surf = self.font.render(round_text, True, (255, 255, 255))
@@ -652,10 +619,10 @@ class Game:
         # Draw Grid
         if self.grid_view:
             self.grid_view.draw(
-                self.screen,
-                self.revealed,
-                self.grid,
-                self.allowed_guesses,
+                self.screen, 
+                self.revealed, 
+                self.grid, 
+                self.allowed_guesses, 
                 self.clue_positions if self.state == AWAIT_GUESS else [],
                 players=self.players
             )
@@ -676,51 +643,122 @@ class Game:
 
 
     def _draw_end(self):
-        y = 80
-        header = self.font.render("Game Over – Shapley Payouts", True, (0, 0, 0))
+        y = 60 # Start slightly lower for more content
+        
+        # --- Header --- 
+        header = self.font.render("Game Over", True, (0, 0, 0))
         header_rect = header.get_rect(center=(WINDOW_W // 2, y))
         self.screen.blit(header, header_rect)
-        y += 50
+        y += 40
 
-        # Check if payouts were calculated successfully
+        # --- Actual Results (Ledger) Section --- 
+        sub_header_ledger = self.font.render("--- Actual Treasure Found ---", True, (0, 0, 128))
+        sub_header_ledger_rect = sub_header_ledger.get_rect(center=(WINDOW_W // 2, y))
+        self.screen.blit(sub_header_ledger, sub_header_ledger_rect)
+        y += 25
+        
+        if self.ledger:
+            total_ledger_val = sum(self.ledger.values())
+            ledger_info_txt = self.font.render(f"Total Found: {total_ledger_val} coins", True, (50, 50, 50))
+            ledger_info_rect = ledger_info_txt.get_rect(center=(WINDOW_W // 2, y))
+            self.screen.blit(ledger_info_txt, ledger_info_rect)
+            y += 20
+
+            for coalition_indices, coins in self.ledger.items():
+                # Format coalition names
+                try:
+                    names = "+".join(sorted(self.players[i].get_short_name() for i in coalition_indices))
+                except (IndexError, AttributeError):
+                    names = "ErrorCoalition"
+                
+                # Use the imported FontSmall directly
+                ledger_entry_txt = FontSmall.render(f"Coalition [{names}]: {coins} coins", True, (0,0,0))
+                ledger_entry_rect = ledger_entry_txt.get_rect(center=(WINDOW_W // 2, y))
+                self.screen.blit(ledger_entry_txt, ledger_entry_rect)
+                y += 18 # Smaller spacing for ledger entries
+        else:
+            no_ledger_txt = self.font.render("No treasure found during the game.", True, (100, 100, 100))
+            no_ledger_rect = no_ledger_txt.get_rect(center=(WINDOW_W // 2, y))
+            self.screen.blit(no_ledger_txt, no_ledger_rect)
+            y += 20
+             
+        y += 25 # Add spacing before next section
+        
+        # --- Shapley Payouts Section --- 
+        sub_header_shapley = self.font.render("--- Shapley Distribution of Found Treasure ---", True, (0, 0, 128))
+        sub_header_shapley_rect = sub_header_shapley.get_rect(center=(WINDOW_W // 2, y))
+        self.screen.blit(sub_header_shapley, sub_header_shapley_rect)
+        y += 25
+
+        # Enhanced explanation text for ledger-based value
+        explanation_line1 = FontSmall.render("(Distributes found treasure based on average contribution to successful coalitions.)", True, (80, 80, 80))
+        explanation_rect1 = explanation_line1.get_rect(center=(WINDOW_W // 2, y))
+        self.screen.blit(explanation_line1, explanation_rect1)
+        y += 16 # Space for next line
+        explanation_line2 = FontSmall.render("(Players get credit if their participation was needed for a score listed above.)", True, (80, 80, 80))
+        explanation_rect2 = explanation_line2.get_rect(center=(WINDOW_W // 2, y))
+        self.screen.blit(explanation_line2, explanation_rect2)
+        y += 25 
+
         if self.payouts is not None:
-            # --- Display calculated payouts --- 
-            total_ledger = sum(self.ledger.values()) # Still show actual treasure found
+            # Display sum of Shapley values (should equal ledger total)
             total_payout = sum(self.payouts)
-            # Display the sum of calculated payouts for verification
-            info_txt = self.font.render(f"Total Treasure Found: {total_ledger} coins. Calculated Total Payout: {total_payout:.2f} coins.", True, (50, 50, 50))
+            info_txt = self.font.render(f"Sum of Payouts (Equals Found Treasure): {total_payout:.2f} coins", True, (50, 50, 50))
             info_rect = info_txt.get_rect(center=(WINDOW_W // 2, y))
             self.screen.blit(info_txt, info_rect)
-            y += 30
+            y += 25
+            
+            # Get set of players who were in any successful coalition
+            successful_players = set()
+            for coalition_indices in self.ledger.keys():
+                 successful_players.update(coalition_indices)
 
+            # Individual payouts with participation marker
             for i, p in enumerate(self.players):
                 if i < len(self.payouts):
                      payout_val = self.payouts[i]
-                     txt = self.font.render(f"{p.name}: {payout_val:.2f} coins", True, p.color)
+                     # Check if player was part of any success
+                     marker = " [*]" if i in successful_players else "" 
+                     txt_str = f"{p.name}: {payout_val:.2f} coins{marker}"
+                     txt = self.font.render(txt_str, True, p.color)
                      txt_rect = txt.get_rect(center=(WINDOW_W // 2, y))
                      self.screen.blit(txt, txt_rect)
                      y += 25
                 else:
-                     # This case indicates an internal error
+                     # Error case (shouldn't happen ideally)
                      print(f"Error: Payout list length mismatch for player {i}")
                      error_surf = self.font.render(f"ERROR: PAYOUT MISMATCH {i}", True, (255,0,0))
                      error_rect = error_surf.get_rect(center=(WINDOW_W // 2, y))
                      self.screen.blit(error_surf, error_rect)
                      y += 25
-                     # Potentially stop drawing more payouts if mismatch occurs
                      break 
-        # --- CHANGE HERE: Correct else block for handling payout errors ---
-        else: 
-            # self.payouts is None, display the error message
+            
+            # Add legend for the marker
+            legend_txt = FontSmall.render("[*] = Member of a scoring coalition", True, (80, 80, 80))
+            legend_rect = legend_txt.get_rect(center=(WINDOW_W // 2, y))
+            self.screen.blit(legend_txt, legend_rect)
+            y += 20 # Add a bit more space after legend
+                    
+        else: # self.payouts is None
+            # Display calculation error message
             error_txt = self.font.render("Error calculating Shapley values.", True, (255, 0, 0))
             error_rect = error_txt.get_rect(center=(WINDOW_W // 2, y))
             self.screen.blit(error_txt, error_rect)
-            y += 30
-        # --- END CHANGE ---
+            y += 25
 
-        # Draw end screen buttons (always draw these)
-        if self.export_button: self.export_button.draw(self.screen)
-        if self.restart_button: self.restart_button.draw(self.screen)
+        # --- End Screen Buttons --- 
+        # Ensure buttons are positioned below content
+        button_y = max(y + 20, WINDOW_H - 60) # Position buttons near bottom, but below text
+        
+        # Indent the button drawing logic correctly
+        if self.export_button:
+            self.export_button.rect.y = button_y
+            self.export_button.rect.centerx = WINDOW_W // 2 - self.export_button.rect.width // 2 - 10
+            self.export_button.draw(self.screen)
+        if self.restart_button: 
+            self.restart_button.rect.y = button_y
+            self.restart_button.rect.centerx = WINDOW_W // 2 + self.restart_button.rect.width // 2 + 10
+            self.restart_button.draw(self.screen)
 
 # --- Entry Point (If this file is run directly, usually in main.py) ---
 if __name__ == '__main__':
