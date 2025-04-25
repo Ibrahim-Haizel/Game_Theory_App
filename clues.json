@@ -1,34 +1,40 @@
 {
   "players": [
     {
-      "name": "Alice",
-      "clue": "Row is 3",
-      "weight": 1
+      "name": "Shallow-Sea Scout",
+      "clue": "The chest is hidden no deeper than four rows from the northern edge.",
+      "weight": 1,
+      "color": [255, 99, 71]
     },
     {
-      "name": "Bob",
-      "clue": "Column is F",
-      "weight": 1
+      "name": "Prime Numerist",
+      "clue": "Its column is a prime sentinel: only 2, 3, 5 or 7 admit the prize.",
+      "weight": 1,
+      "color": [148, 0, 211]
     },
     {
-      "name": "Cara",
-      "clue": "Row is 9",
-      "weight": 1
+      "name": "Parity Jester",
+      "clue": "When row and column dance together, their sum laughs an odd laugh.",
+      "weight": 1,
+      "color": [65, 105, 225]
     },
     {
-      "name": "Dan",
-      "clue": "Column is B",
-      "weight": 1
+      "name": "Humble Tactician",
+      "clue": "The row bows to the column — the rank is strictly smaller than its file.",
+      "weight": 1,
+      "color": [238, 130, 238]
     },
     {
-      "name": "Eve",
-      "clue": "Row is 6",
-      "weight": 1
+      "name": "Western Cartographer",
+      "clue": "Travel east of the letter F; only G, H, I or J lie beyond the map's tear.",
+      "weight": 1,
+      "color": [255, 215, 0]
     },
     {
-      "name": "Frank",
-      "clue": "Column is H",
-      "weight": 1
+      "name": "Three-Beat Chronomancer",
+      "clue": "March the rows in threes; the treasure rests on the second beat each time.",
+      "weight": 1,
+      "color": [255, 140, 0]
     }
   ]
 }

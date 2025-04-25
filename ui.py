@@ -373,14 +373,10 @@ class PlayerPanel:
             name_pos = (self.rect.x + 30, y_offset + 8)
             screen.blit(name_txt, name_pos)
 
-            # Draw Clue if revealed for this player
-            if i in self.reveal_coalition:
-                clue_txt = FontSmall.render(f"   Clue: {player.clue}", True, (50, 50, 50))
-                clue_pos = (self.rect.x + 30, y_offset + 22)
-                screen.blit(clue_txt, clue_pos)
-            else:
-                clue_txt = FontSmall.render("   Clue: [Hidden]", True, (150, 150, 150))
-                screen.blit(clue_txt, (self.rect.x + 30, y_offset + 22))
+            # Always show Clue
+            clue_txt = FontSmall.render(f"   Clue: {player.clue}", True, (50, 50, 50))
+            clue_pos = (self.rect.x + 30, y_offset + 22)
+            screen.blit(clue_txt, clue_pos)
 
             y_offset += widget_h
 

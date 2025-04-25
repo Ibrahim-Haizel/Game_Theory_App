@@ -20,29 +20,29 @@ class Player:  # noqa: D101
         return self.name[0].upper() if self.name else "?"
 
     def allowed_positions(self, grid_size: int) -> set[tuple[int, int]]:
-        """Parse the clue into a set of allowed (row, col) positions on the grid."""
-        import re
-        positions: set[tuple[int,int]] = set()
-        clue_lower = self.clue.lower()
-        # Pattern: Row is N
-        m_row = re.search(r"row\s+is\s+(\d+)", clue_lower)
-        if m_row:
-            r = int(m_row.group(1)) - 1
-            if 0 <= r < grid_size:
-                for c in range(grid_size):
-                    positions.add((r, c))
-        # Pattern: Column is Letter
-        m_col = re.search(r"column\s+is\s*([a-zA-Z])", clue_lower)
-        if m_col:
-            c_letter = m_col.group(1).upper()
-            c = ord(c_letter) - ord('A')
-            if 0 <= c < grid_size:
-                for rr in range(grid_size):
-                    positions.add((rr, c))
-        # If no specific parse, allow all
-        if not positions:
-            positions = {(rr, cc) for rr in range(grid_size) for cc in range(grid_size)}
-        return positions
+        """Support specialized truth-based clue types by detecting keywords."""
+        clue = self.clue.lower()
+        # 1) Shallow-Sea Scout: rows 0 through 3
+        if "no deeper" in clue or "northern edge" in clue:
+            return {(r, c) for r in range(0, min(4, grid_size)) for c in range(grid_size)}
+        # 2) Prime Numerist: columns 2,3,5,7 (0-based primes)
+        if "prime sentinel" in clue or "prime" in clue:
+            primes = {2, 3, 5, 7}
+            return {(r, c) for r in range(grid_size) for c in primes if c < grid_size}
+        # 3) Parity Jester: (row+col)%2 == 1
+        if "odd laugh" in clue or "parity" in clue:
+            return {(r, c) for r in range(grid_size) for c in range(grid_size) if (r + c) % 2 == 1}
+        # 4) Humble Tactician: row < col
+        if "rank is strictly smaller" in clue or "bows to the column" in clue:
+            return {(r, c) for r in range(grid_size) for c in range(grid_size) if r < c}
+        # 5) Western Cartographer: columns >= 6 (east of F)
+        if "east of" in clue and "f" in clue:
+            return {(r, c) for r in range(grid_size) for c in range(6, grid_size)}
+        # 6) Three-Beat Chronomancer: row%3 == 2
+        if "second beat" in clue or "in threes" in clue or "chronomancer" in clue:
+            return {(r, c) for r in range(grid_size) for c in range(grid_size) if r % 3 == 2}
+        # Fallback: allow full grid
+        return {(r, c) for r in range(grid_size) for c in range(grid_size)}
 
 
 @dataclass
@@ -101,12 +101,12 @@ def load_board(json_path: Optional[Path], size: int) -> Grid:
 
     if json_path and json_path.exists():
         data = json.loads(json_path.read_text())
-        for t in data["treasures"]:
+        treasures = data.get("treasures", [])
+        if treasures:
+            t = treasures[0]
             grid[t["row"]][t["col"]] = Treasure(value=t["value"])
     else:
-        # --- Random scatter: ~size treasures, coin values 20–80 -------------
-        for _ in range(size):
-            r, c = random.randrange(size), random.randrange(size)
-            if grid[r][c] is None:
-                grid[r][c] = Treasure(value=random.choice([20, 40, 60, 80]))
+        # Random scatter: place exactly one treasure with random coin value
+        r, c = random.randrange(size), random.randrange(size)
+        grid[r][c] = Treasure(value=random.choice([20, 40, 60, 80]))
     return grid

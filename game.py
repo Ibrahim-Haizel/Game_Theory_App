@@ -356,13 +356,13 @@ class Game:
         print("Ending game and calculating payouts...")
         self.state = END
         
-        # --- Calculate the characteristic function based on ledger subsets ---
-        values = self._calculate_ledger_based_characteristic_function() # Use the new function
+        # --- Calculate the characteristic function based on clues: number of eliminated positions by coalition ---
+        values = self._calculate_clues_based_characteristic_function() # Use the new function
         
         weights = [p.weight for p in self.players]
         try:
              self.payouts = shapley_sample(values, len(self.players), weights, samples=10000)
-             print(f"Shapley Payouts calculated (ledger-based): {self.payouts}")
+             print(f"Shapley Payouts calculated (clues-based): {self.payouts}")
              # Verification: Check if sum of payouts roughly equals ledger total
              total_ledger_value = sum(self.ledger.values()) # Get actual ledger total
              print(f"Total treasure found (ledger sum) = {total_ledger_value}") # Use ledger total
@@ -381,37 +381,36 @@ class Game:
         if not hasattr(self, 'restart_button') or self.restart_button is None:
             self.restart_button = Button(pg.Rect(WINDOW_W // 2 + 10, WINDOW_H - 60, 150, 30), "Restart Game", self._restart_game)
 
-    def _calculate_ledger_based_characteristic_function(self) -> Dict[FrozenSet[int], int]:
-        """Calculates v(S) based on ledger subsets.
-        
-        v(S) is the sum of coins collected by any coalition C
-        recorded in the ledger where C is a subset of S.
-        This ensures v(S) is non-decreasing.
-        """
-        print("Calculating ledger-based characteristic function v(S)...")
+    def _calculate_clues_based_characteristic_function(self) -> Dict[FrozenSet[int], int]:
+        """Calculates v(S) based on clues: number of eliminated positions by coalition."""
+        print("Calculating clues-based characteristic function v(S)...")
         if not self.players:
             print("Warning: Cannot calculate v(S) without players.")
             return {}
-        
+
         n = len(self.players)
         v: Dict[FrozenSet[int], int] = {}
-        
+        grid_size = self.grid_size
+        total_cells = grid_size * grid_size
+
         # Iterate through all possible coalition sizes (0 to n)
-        for k in range(n + 1): 
+        for k in range(n + 1):
             # Iterate through all coalitions S of size k
             for coalition_indices_tuple in itertools.combinations(range(n), k):
                 S = frozenset(coalition_indices_tuple)
-                
-                # Calculate v(S) by summing ledger entries where C is a subset of S
-                coalition_value = 0
-                for C, value in self.ledger.items():
-                    if C.issubset(S):
-                        coalition_value += value
-                        
-                v[S] = coalition_value
-                # print(f"  v({set(S)}) = {coalition_value}") # Debug print
-        
-        print("Finished calculating ledger-based v(S).")
+
+                if not S:
+                    v[S] = 0
+                else:
+                    # Intersection of allowed positions of players in S
+                    intersect_positions = {(r, c) for r in range(grid_size) for c in range(grid_size)}
+                    for idx in S:
+                        intersect_positions &= self.players[idx].allowed_positions(grid_size)
+                    allowed_count = len(intersect_positions)
+                    # v(S) is number of eliminated positions
+                    v[S] = total_cells - allowed_count
+
+        print("Finished calculating clues-based v(S).")
         return v
 
     def _export_results(self):
